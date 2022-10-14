@@ -22,7 +22,7 @@ import sys
 import socket
 import re
 # you may use urllib to encode data appropriately
-import urllib.parse
+from urllib.parse import urlparse, urlencode
 
 def help():
     print("httpclient.py [GET/POST] [URL]\n")
@@ -38,16 +38,62 @@ class HTTPClient(object):
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port))
-        return None
+        return self.socket
 
     def get_code(self, data):
-        return None
+        try:
+            # code will appear right after "HTTP/1.1"
+            code = data.split()[1]
+            return int(code)
+        except:
+            return None
 
     def get_headers(self,data):
-        return None
+        headers = ""
+        try:
+            chunks = data.split("\r\n\r\n", 1)
+            headers = chunks[0]
+            return headers
+        except:
+            return None
 
     def get_body(self, data):
-        return None
+        body = ""
+        try:
+            chunks = data.split("\r\n\r\n", 1)
+            body = chunks[1]
+            return body
+        except:
+            return None
+
+    def get_host(self, parsed_url):
+        host = ""
+        # find host
+        if ':' in parsed_url.netloc:
+            host = parsed_url.netloc.split(':')[0]
+        else:
+            host = parsed_url.netloc
+
+        return host
+
+    def get_port(self, parsed_url):
+        port = None
+        # find port
+        if parsed_url.port:
+            port = parsed_url.port
+        else:
+            port = 80
+
+        return port
+
+    def get_path(self, parsed_url):
+        path = ""
+        if parsed_url.path == "":
+            path = "/"
+        else:
+            path = parsed_url.path
+
+        return path
     
     def sendall(self, data):
         self.socket.sendall(data.encode('utf-8'))
@@ -68,13 +114,83 @@ class HTTPClient(object):
         return buffer.decode('utf-8')
 
     def GET(self, url, args=None):
-        code = 500
-        body = ""
+        
+        parsed = urlparse(url)
+        path = self.get_path(parsed)
+        host = self.get_host(parsed)
+        port = self.get_port(parsed)
+        query = parsed.query
+
+        if query:
+            path += "?"
+            path += query
+
+        # send GET request
+        request = "GET {} HTTP/1.1\r\n".format(path)
+        request += "Host: {}\r\n".format(host)
+        request += "Accept: */*\r\n"
+        request += "Connection: close\r\n\r\n"
+
+        # connect
+        sock = self.connect(host, port)
+        # send POST request
+        self.sendall(request)
+        # recieve response
+        data = self.recvall(sock)
+        # print data
+        print(data)
+        # close connection
+        self.close()
+
+        # headers = self.get_headers(data)
+        code = self.get_code(data)
+        body = self.get_body(data)
+
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
-        code = 500
-        body = ""
+
+        parsed = urlparse(url)
+        path = self.get_path(parsed)
+        host = self.get_host(parsed)
+        port = self.get_port(parsed)
+        query = parsed.query
+
+        if query:
+            path += "?"
+            path += query
+
+        # create POST request
+        request = "POST {} HTTP/1.1\r\n".format(path)
+        request += "Host: {}\r\n".format(host)
+        request += "Content-Type: application/x-www-form-urlencoded\r\n"
+
+
+        if args:
+            # convert to string of key=value pairs separated by & 
+            encoded = urlencode(args)
+            c_length = len(encoded)
+            request += "Content-Length: {}\r\n\r\n".format(c_length)
+            request += encoded
+        else:
+            request += "Content-Length: 0\r\n"
+            request += "Connection: close\r\n\r\n"
+
+        # connect
+        sock = self.connect(host, port)
+        # send POST request
+        self.sendall(request)
+        # recieve response
+        data = self.recvall(sock)
+        # print data
+        print(data)
+        # close connection
+        self.close()
+
+        # headers = self.get_headers(data)
+        code = self.get_code(data)
+        body = self.get_body(data)
+        
         return HTTPResponse(code, body)
 
     def command(self, url, command="GET", args=None):
